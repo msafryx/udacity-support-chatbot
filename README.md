@@ -1,30 +1,68 @@
-# Purpose of This Repo
+# Customer Support Chatbot — Amazon Bedrock AgentCore
 
-This repo is the source of truth for the course project **"Customer Support Chatbot with Amazon Bedrock AgentCore"** (Prompting for Effective LLM Reasoning). It contains the starter files students use to build the project.
+A customer support chatbot for a fictional online shop, built on the **Amazon Bedrock AgentCore managed harness**. All routing, information-gathering, and grounding behavior lives in a single system prompt. The harness supplies the agent loop (model calls, stateful sessions, tool execution); the prompt supplies the behavior.
 
-> **Note:** Bedrock *Agents Classic* was closed to new customers on July 30, 2026. This project runs on its successor, the **Amazon Bedrock AgentCore managed harness**, with tools exposed through an **AgentCore Gateway**. Bedrock Evaluations, which the project uses for testing, is unaffected.
+## Routes
 
-## Folder Structure
+The assistant classifies every incoming message into exactly one of three routes:
 
-### Project Folder
+- **Bug report** — collects the bug *description*, *steps to reproduce*, and *environment* across the conversation (one question at a time), then files a ticket by calling the `create_bug_report` tool. The tool is a Lambda function exposed through an AgentCore Gateway that writes the ticket to DynamoDB. The customer is given the ticket ID.
+- **Platform question** — answered **only** from the FAQ embedded in the prompt (orders, shipping, returns, payments, products, accounts, privacy). If the FAQ doesn't cover it, the assistant hands off to human support.
+- **Other** — anything else is politely redirected to the human support line.
 
-The `project` folder contains all files and instructions necessary for the project:
+## Tech stack
 
-* `project/README.md` — the full project instructions (setup, building the harness, testing, cleanup).
-* `project/starter/` — the files students start from:
-  * CloudFormation templates for the bug-report tool (Lambda + DynamoDB + IAM roles) and the testing resources (S3 + evaluation role)
-  * Python setup scripts for the AgentCore resources (`setup_gateway.py`, `create_harness.py`), a chat client (`chat.py`), and cleanup (`cleanup_agentcore.py`)
-  * `system_prompt.txt` — the student's main deliverable
-  * the FAQ document, the evaluation-dataset generator, and a test-suite template
+- Amazon Bedrock AgentCore managed harness — runs the chatbot
+- Amazon Bedrock AgentCore Gateway — exposes the bug-report Lambda as a tool
+- AWS Lambda + Amazon DynamoDB — bug-report tool runtime and storage
+- Amazon Bedrock Evaluations — LLM-as-a-judge quality evaluation
+- Model: `us.amazon.nova-pro-v1:0`, region `us-east-1`
 
-The reference solution, rubric, and detailed docs (`docs/tools-setup.md`, `docs/testing.md`) live in the companion solution repo.
+## Key files
 
-### What students build
+| File | Description |
+|------|-------------|
+| `system_prompt.txt` | Main deliverable — the system prompt that defines all routing and behavior |
+| `online_shop_faq.md` | FAQ embedded into the prompt at build time (replaces the `{{FAQ}}` placeholder) |
+| `cloudformation-tool.yaml` | Deploys the DynamoDB table, the `create_bug_report` Lambda, and the gateway/harness IAM roles |
+| `cloudformation-testing.yaml` | Deploys the S3 bucket and IAM role for evaluation |
+| `setup_gateway.py` | Creates the AgentCore Gateway and registers the Lambda tool |
+| `create_harness.py` | Creates/updates the managed harness from `system_prompt.txt` |
+| `chat.py` | Terminal chat client for multi-turn testing |
+| `harness-tests.json` | Automated test suite covering all three routes plus edge cases |
+| `flow-tests.json` | Copy of the test suite (alternate name referenced by the rubric) |
+| `generate-eval-dataset.py` | Runs the harness over the test suite and writes the eval JSONL |
+| `output_eval_dataset.jsonl` | Eval dataset (one line per test) uploaded to Bedrock Evaluations |
+| `README_observations.md` | Written observations on the evaluation results |
+| `cleanup_agentcore.py` | Tears down the harness, gateway target, and gateway |
 
-1. Deploy the tool stack (CloudFormation) and create the gateway (`setup_gateway.py`).
-2. Design the system prompt: route each message to bug-report collection, FAQ answering, or a polite human hand-off; collect all bug details across a multi-turn session before filing a ticket with the `create_bug_report` tool.
-3. Create the harness (`create_harness.py`), iterate with `chat.py`.
-4. Test automatically: run a test suite through `generate-eval-dataset.py` and score the results with Bedrock Evaluations.
-5. Clean up all resources.
+## How to run
 
-All work happens in **us-east-1**, with the model pinned to `us.amazon.nova-pro-v1:0`.
+```bash
+# 1. Deploy the tool stack (DynamoDB + Lambda + IAM roles)
+aws cloudformation deploy --template-file cloudformation-tool.yaml \
+  --stack-name bug-report-tool-stack --capabilities CAPABILITY_NAMED_IAM --region us-east-1
+
+# 2. Create the gateway and register the tool
+python setup_gateway.py
+
+# 3. Create the harness from the system prompt
+python create_harness.py
+
+# 4. Chat with it
+python chat.py
+
+# 5. Run the automated test suite
+python generate-eval-dataset.py --tests-json harness-tests.json
+```
+
+## Evaluation results
+
+The chatbot was evaluated with Amazon Bedrock Evaluations using the `Builtin.Correctness` metric and `amazon.nova-pro-v1:0` as the LLM-as-a-judge. **Overall correctness score: 0.88.** See `README_observations.md` for a per-route breakdown and notes.
+
+## Evidence
+
+Screenshots are in the `screenshots/` folder:
+- `screenshot_chat_bug.png` — bug-report conversation showing follow-up questions and the `[tool call] bugreports___create_bug_report` line
+- `screenshot_dynamodb.png` — the DynamoDB table with a chatbot-created ticket
+- `screenshot_eval_results.png` — the Bedrock Evaluations results page
