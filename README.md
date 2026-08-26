@@ -65,4 +65,5 @@ The chatbot was evaluated with Amazon Bedrock Evaluations using the `Builtin.Cor
 Screenshots are in the `screenshots/` folder:
 - `screenshot_chat_bug.png` — bug-report conversation showing follow-up questions and the `[tool call] bugreports___create_bug_report` line
 - `screenshot_dynamodb.png` — the DynamoDB table with a chatbot-created ticket
-- `screenshot_eval_results.png` — the Bedrock Evaluations results page
+- `screenshot_eval_results.png` — the Bedrock Evaluations results page (correctness 0.88)
+- `screenshot_uncovered_and_other.png` — chat responses for a covered FAQ question, an uncovered FAQ question (hand-off to support), and an other-category request (hand-off to support)
